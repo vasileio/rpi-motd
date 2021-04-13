@@ -1,0 +1,64 @@
+#!/bin/bash
+#
+#  10-sysinfo - generate the system information
+#
+function uptime_func {
+	upSeconds="$(cat /proc/uptime | grep -o '^[0-9]\+')"
+	upMins=$((${upSeconds}/60%60))
+	upHours=$((${upSeconds}/3600%24))
+	upDays=$((${upSeconds}/86400))
+
+	if [ "${upMins}" -gt "1" ]; then
+    		if [ "${upDays}" -gt "0" ]; then
+        		echo "${upDays}d ${upHours}h ${upMins}m"
+    		elif [ "${upHours}" -gt "0" ]; then
+        		echo "${upHours}h ${upMins}m"
+    		else
+        		echo "${upMins}m"
+    	fi
+	else
+    		echo "<1m"
+	fi
+}
+
+date=`date`
+load_1m=`cat /proc/loadavg | awk '{print $1}'`
+load_5m=`cat /proc/loadavg | awk '{print $2}'`
+load_15m=`cat /proc/loadavg | awk '{print $3}'`
+root_usage=`df -h / | awk '/\// {print $(NF-1)}'`
+wd_free_gb=$(df -h /mnt/WD | awk '/\// {print $(NF-2)}')
+memory_usage=`free -m | awk '/Mem:/ { total=$2 } /buffers\/cache/ { used=$3 } END { printf("%3.1f%%", used/total*100)}'`
+swap_usage=`free -m | awk '/Swap/ { printf("%3.1f%%", "exit !$2;$3/$2*100") }'`
+processes=`ps aux | wc -l`
+ip=`hostname -I`
+external_ip=`dig TXT +short o-o.myaddr.l.google.com @ns1.google.com | awk -F'"' '{ print $2}'`
+ISP=$(curl ipinfo.io/org | cut -f 2- -d ' ')
+
+if [[ $ISP =~ .*EE.* ]]; then
+        # Text in red
+        vpn_status=$(echo -e "\033[31mNot connected\033[49m")
+else
+        # Text in green
+        vpn_status=$(echo -e "\033[32mConnected\033[49m")
+fi;
+
+temp=$(/opt/vc/bin/vcgencmd measure_temp | grep -Eo "[0-9]+\.[0-9]+")
+real_clock_speed=$(vcgencmd measure_clock arm | awk -F"=" '{printf ("%0.0f", $2 / 1000000); }' )
+weather=`curl -s "http://rss.accuweather.com/rss/liveweather_rss.asp?metric=1&locCode=EUR|UK|UK002|EDINBURGH" | sed -n '/Currently:/ s/.*: \(.*\): \([0-9]*\)\([CF]\).*/\2°\3, \1/p'`
+
+echo "System information as of: $date"
+echo
+printf "System load:\t%s %s %s\n\n" $load_1m $load_5m $load_15m 
+printf "Processes:\t%s\tSoC temp:\t%s°C\n" $processes $temp
+printf "Memory usage:\t%s\tSystem uptime:\t" $memory_usage
+uptime_func
+printf "Usage on /:\t%s\tFree on WD:\t%sB\n" $root_usage $wd_free_gb
+echo
+printf "Local IP:\t%s\nExternal IP:\t%s\n" $ip $external_ip
+echo
+echo VPN: $vpn_status
+# Fallback to distro's default colours
+echo -e "\033[39mISP: $ISP\033[49m"
+echo
+echo Weather in Edinburgh: $weather
+echo
